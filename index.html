@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ping Graph Monitor</title>
+<style>
+    body {
+        background: black;
+        margin: 0;
+        color: white;
+        text-align: center;
+        font-family: Arial;
+    }
+
+    #wifi {
+        font-size: 50px;
+        margin-top: 10px;
+    }
+
+    #ping, #maxPing, #status {
+        font-size: 20px;
+        margin-top: 5px;
+    }
+
+    #graph {
+        background: white;
+        width: 100%;
+        height: 60vh;
+        display: block;
+    }
+
+    #rok {
+        background: transparent;
+        height: 250px;
+        font-size: 100px;
+        width: 100%;
+        z-index: 1000;
+        position: absolute;
+        top: 25%;
+        text-shadow: 3px 3px #0000005E;
+    }
+</style>
+</head>
+<body>
+
+<div id="rok">loading...</div>
+<div id="wifi">📶</div>
+<p id="status">Status: --</p>
+<p id="ping">Ping: -- ms</p>
+<p id="maxPing">Max Ping: -- ms</p>
+
+<canvas id="graph"></canvas>
+
+<script>
+const wifiEl = document.getElementById("wifi");
+const pingEl = document.getElementById("ping");
+const statusEl = document.getElementById("status");
+const maxPingEl = document.getElementById("maxPing");
+const canvas = document.getElementById("graph");
+const ctx = canvas.getContext("2d");
+
+let pingHistory = [];
+let highestPing = 0;
+
+// Resize canvas
+function resizeCanvas() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// Measure ping
+async function measurePing() {
+    if (!navigator.onLine) return null;
+
+    const start = performance.now();
+    try {
+        await fetch("https://www.google.com/favicon.ico?t=" + Math.random(), {
+            mode: "no-cors"
+        }).catch(() => null);
+        return performance.now() - start;
+    } catch {
+        return null;
+    }
+}
+let gridSize;
+
+// Draw red grid
+function drawGrid(ping){
+    //thanks because drawReferenceLines is doing my work
+}
+
+// Deepseek feature: 0ms, 30ms, 100ms lines
+function drawReferenceLines(minPing, maxPing) {
+    const h = canvas.height;
+
+    // nearest lower 100ms line
+    let start = Math.floor(minPing / 100) * 100;
+    // nearest upper 100ms line
+    let end = Math.min(Math.ceil(maxPing / 100) * 100, 50*100);
+
+    ctx.strokeStyle = "rgba(0,0,255,0.5)";
+    ctx.fillStyle = "blue";
+    ctx.font = "12px Arial";
+
+    for (let v = start; v <= end; v += 100) {
+        let y = h - ((v - minPing) / (maxPing - minPing)) * h;
+
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+
+        ctx.fillText(v + "ms", 5, y - 3);
+    }
+    for (let v1 = start; v1 <= end; v1 += 100) {
+    let x1 = ((v1 - minPing) / (maxPing - minPing)) * canvas.width; // x-axis now
+    ctx.beginPath();
+    ctx.moveTo(x1, 0);           // top
+    ctx.lineTo(x1, canvas.height); // bottom
+    ctx.stroke();
+
+    // Label on top
+    ctx.save();
+    ctx.translate(x1 + 2, 12); // adjust label position
+    ctx.rotate(-Math.PI / 2);   // rotate text vertical
+    ctx.fillText(v1 + "ms", 0, 0);
+    ctx.restore();
+}
+}
+
+
+async function tick() {
+    let ping = await measurePing();
+
+    if (!navigator.onLine || ping === null) {
+        statusEl.textContent = "Status: Offline ❌";
+        wifiEl.style.color = "red";
+        pingEl.textContent = "Ping: -- ms";
+
+        pingHistory.push(pingHistory.at(-1) || 100);
+    } else {
+        wifiEl.style.color = "lime";
+        statusEl.textContent = "Status: Online ✔️";
+
+        ping = Math.round(ping);
+        pingEl.textContent = `Ping: ${ping} ms`;
+        pingHistory.push(ping);
+        if (ping > highestPing) {
+            highestPing = ping;
+            maxPingEl.textContent = `Max Ping: ${highestPing} ms`;
+        }
+    }
+
+    if (pingHistory.length > canvas.width) pingHistory.shift();
+
+    // loading hide
+    if (pingEl.textContent !== "Ping: -- ms") {
+        document.getElementById('rok').style.display = 'none';
+    }
+}
+
+function loop() {
+    drawGraph();
+    requestAnimationFrame(loop);
+}
+
+setInterval(tick, 20);
+loop();
+
+// Draw graph + dot
+function drawGraph() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+
+    
+
+    if (pingHistory.length < 2) return;
+    let visible = (pingHistory.slice(-canvas.width)); // visible history
+     let minPing = Math.min(...visible);
+    let maxPing = Math.max(...visible);
+    if (maxPing - minPing < 1) maxPing += 1; // avoid divide by zero
+
+    drawReferenceLines(minPing, maxPing);
+drawGrid(maxPing);
+    for (let i = 1; i < visible.length; i++) {
+        const prev = visible[i - 1];
+        const curr = visible[i];
+
+        let x1 = canvas.width - (visible.length - i + 1);
+        let x2 = canvas.width - (visible.length - i);
+
+        let y1 = canvas.height - ((prev - minPing) / (maxPing - minPing)) * canvas.height;
+        let y2 = canvas.height - ((curr - minPing) / (maxPing - minPing)) * canvas.height;
+
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = curr > prev ? "red" : "green";
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    }
+
+    // Dot (Deepseek feature)
+    let last = visible[visible.length - 1];
+    let y = canvas.height - ((last - minPing) / (maxPing - minPing)) * canvas.height;
+
+    ctx.beginPath();
+    ctx.fillStyle = "black";
+    ctx.arc(canvas.width - 2, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.fillStyle = "yellow";
+    ctx.arc(canvas.width - 2, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+</script>
+
+</body>
+</html>
